@@ -34,20 +34,27 @@ struct row{
 	int siteorient, sitesymmetry;
 	int subroworigin;
 	int numsite;
+	vector<row> subrow;
 };
+
 
 struct CustomCompare
 {
 
     bool operator()(const node& lhs, const node& rhs)
     {
-        return lhs.x < rhs.x;
+        if(lhs.x != rhs.x){
+        	return lhs.x < rhs.x;
+		}else{
+			return lhs.y < rhs.y;
+		}
+		
     }
 };
 
 //gloabal var
 string nodeFile, plFile, sclFile;
-string testcase_path = "../testcase/sample/";
+string testcase_path = "../testcase/adaptec1/";
 int maxDisplacement;
 int numNode, numTerminal;
 int numRow;
@@ -167,18 +174,50 @@ void read_scl(){
 }
 
 void generate_subrows(){
+	int rowcnt = 0;
 	set<node, CustomCompare> obstacle;
 	for(auto i=terminals.begin(); i!=terminals.end(); i++){
 		obstacle.insert(*i->second);
+		
 	}
+	//cout<<"o: "<<obstacle.size()<<endl;
 	for(int i=0; i<rows.size(); i++){
-		int tmpx = rows[i].subroworigin;
-		for()
+		int tmpx = rows[i].subroworigin, endx = rows[i].subroworigin + rows[i].numsite;
+		int tmpy = rows[i].coordinate;
+		cout<<"row "<<i<<":\n";
+		for(auto o=obstacle.begin(); o!=obstacle.end();o++){
+			if(o->x == tmpx && tmpy >= o->y && tmpy < o->y+o->h){
+				tmpx = tmpx + o->w;
+			}else if(o->x > tmpx && o->x < endx && tmpy >= o->y && tmpy < o->y+o->h){
+				row r;
+				r.subroworigin = tmpx;
+				r.coordinate = tmpy;
+				r.numsite = o->x - tmpx;
+				tmpx = o->x + o->w;
+				rowcnt++;
+				rows[i].subrow.push_back(r);
+				cout<<"("<<r.subroworigin<<", "<<r.subroworigin+r.numsite<<") ";
+			}else if(tmpx >= endx){
+				break;
+			}
+		}
+		if(tmpx < rows[i].subroworigin + rows[i].numsite){
+			row r;
+			r.subroworigin = tmpx;
+			r.coordinate = tmpy;
+			r.numsite = rows[i].subroworigin + rows[i].numsite - tmpx;
+			rowcnt++;
+			rows[i].subrow.push_back(r);
+			cout<<"("<<r.subroworigin<<", "<<r.subroworigin+r.numsite<<") ";
+		}
+		cout<<endl;
 	}
+	cout<<"r: "<<rowcnt<<endl;
+	return;
 }
 
 int main(void){
-	FILE* aux = fopen("../testcase/sample/sample.aux", "r");
+	FILE* aux = fopen("../testcase/adaptec1/adaptec1.aux", "r");
 	read_aux(aux);
 	read_node();
 	read_pl();
