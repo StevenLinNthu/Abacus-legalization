@@ -27,6 +27,15 @@ struct node{
 	float x, y;
 };
 
+struct cluster{
+	vector<int> cells;
+	int idx;
+	int e;
+	float x;
+	int w;
+	int q;
+};
+
 struct row{
 	int coordinate;
 	int height;
@@ -34,7 +43,7 @@ struct row{
 	int siteorient, sitesymmetry;
 	int subroworigin;
 	int numsite;
-	vector<row> subrow;
+	vector<cluster> clusters;
 };
 
 
@@ -59,7 +68,7 @@ int maxDisplacement;
 int numNode, numTerminal;
 int numRow;
 unordered_map<int, node*> blocks, terminals;
-vector<row> rows;
+vector<row> rows, subrows;
 //
 
 void read_aux(FILE* input){
@@ -184,37 +193,137 @@ void generate_subrows(){
 	for(int i=0; i<rows.size(); i++){
 		int tmpx = rows[i].subroworigin, endx = rows[i].subroworigin + rows[i].numsite;
 		int tmpy = rows[i].coordinate;
-		cout<<"row "<<i<<":\n";
+		//cout<<"row "<<i<<":\n";
 		for(auto o=obstacle.begin(); o!=obstacle.end();o++){
 			if(o->x == tmpx && tmpy >= o->y && tmpy < o->y+o->h){
 				tmpx = tmpx + o->w;
 			}else if(o->x > tmpx && o->x < endx && tmpy >= o->y && tmpy < o->y+o->h){
-				row r;
+				row r = rows[i];
 				r.subroworigin = tmpx;
 				r.coordinate = tmpy;
 				r.numsite = o->x - tmpx;
 				tmpx = o->x + o->w;
 				rowcnt++;
-				rows[i].subrow.push_back(r);
-				cout<<"("<<r.subroworigin<<", "<<r.subroworigin+r.numsite<<") ";
+				subrows.push_back(r);
+				//cout<<"("<<r.subroworigin<<", "<<r.subroworigin+r.numsite<<") ";
 			}else if(tmpx >= endx){
 				break;
 			}
 		}
 		if(tmpx < rows[i].subroworigin + rows[i].numsite){
-			row r;
+			row r = rows[i];
 			r.subroworigin = tmpx;
 			r.coordinate = tmpy;
 			r.numsite = rows[i].subroworigin + rows[i].numsite - tmpx;
 			rowcnt++;
-			rows[i].subrow.push_back(r);
-			cout<<"("<<r.subroworigin<<", "<<r.subroworigin+r.numsite<<") ";
+			subrows.push_back(r);
+			//cout<<"("<<r.subroworigin<<", "<<r.subroworigin+r.numsite<<") ";
 		}
-		cout<<endl;
+		//cout<<endl;
 	}
 	cout<<"r: "<<rowcnt<<endl;
 	return;
 }
+
+cluster add_cell(cluster c, node n){
+	c.cells.push_back(n.id);
+	c.e++;
+	c.q += n.x - c.w;
+	c.w += n.w;
+	return c;
+}
+
+cluster add_cluster(cluster c, cluster c_prev){
+	for(int i=0; i<c.cells.size();i++){
+		c_prev.cells.push_back(c.cells[i]);
+	}
+	c_prev.e += c.e;
+	c_prev.q += c.q - c.e*c_prev.w;
+	c_prev.w += c.w;
+	return c_prev;	
+}
+
+void collapse(cluster c, int r){
+	c.x = (int)1.0*c.q/c.e;
+	if(c.x < subrows[r].subroworigin){
+		c.x = subrows[r].subroworigin;
+	}else if(c.x > subrows[r].subroworigin+subrows[r].numsite-c.w){
+		c.x = subrows[r].subroworigin+subrows[r].numsite-c.w;
+	}
+	if(c.idx>=1){
+		cluster c_prev = subrows[r].clusters[c.idx-1];
+		if(c_prev.x+c_prev.w > c.x){
+			c_prev = add_cluster(c, c_prev);
+			subrows[r].clusters.erase(subrows[r].clusters.begin() + c.idx);
+		}
+		collapse(c_prev, r);
+	}
+	return;
+}
+
+float place_row(node cell, int r, bool write = false){	
+	vector<cluster> backup = subrows[r].clusters;
+	if(subrows[r].clusters.empty()){
+		cluster c;
+		c.idx = 0;
+		c.e = c.q = c.w = 0;
+		c.x = (int) cell.x;
+		c = add_cell(c, cell);
+		//subrows[i].clusters.push_back(c);
+	}else{
+		cluster c = subrows[r].clusters.back();
+		if(c.x+c.w <= cell.x){
+			cluster c2;
+			c2.e = c2.q = c2.w = 0;
+			c2.idx = c.idx++;
+			c2.x = (int) cell.x;
+			c2 = add_cell(c, cell);
+			//subrows[i].clusters.push_back(c2);
+		}else{
+			c = add_cell(c, cell);
+			collapse(c, r);
+		}
+	}
+	float cost=0;
+	for(int i=0; i<subrows[r].clusters.size(); i++){
+		int x = subrows[r].clusters[i].x;
+		for(auto j=subrows[r].clusters[i].cells.begin(); j!=subrows[r].clusters[i].cells.end(); j++){
+			if(write) blocks[*j].x = x;
+			if(*j = node.id && !write){
+				cost = (node.x - x)*(node.x - x) + (node.y - subrows[r].coordinate)*(node.y - subrows[r].coordinate);
+			}
+			x += blocks[*j].w;
+		}
+	}
+	if(!write) subrows[r].clusters = backup;
+	return cost;	
+}
+
+void Abacus(){
+	set<node, CustomCompare> cells;
+	for(auto i=blocks.begin(); i!=blocks.end(); i++){
+		cells.insert(*i->second);	
+	}
+	if(cells.size() != blocks.size()) cout<<"Size error: "<<cells.size()<<" "<<blocks.size()<<endl;
+	for(auto c=cells.begin(); c!=cells.end(); c++){
+		float cost = 1000000, tmp_cost=0;
+		int rbest = 0;
+		node cell = *c;
+		for(int r=0; r<subrows.size(); r++){
+			 
+			if(abs(subrows[r].coordinate - cell.y) < 2*cell.h && ) tmp_cost = place_row(cell, r);
+			if(tmp_cost < cost){
+				cost = tmp_cost;
+				rbest = r;
+			}
+		}
+		place_row(cell, rbest, true);
+	}
+	return;
+}
+
+
+
 
 int main(void){
 	FILE* aux = fopen("../testcase/adaptec1/adaptec1.aux", "r");
@@ -224,7 +333,7 @@ int main(void){
 	read_scl();
 	
 	generate_subrows();
-	
+	Abacus();
 	
 	return 0;	
 }
