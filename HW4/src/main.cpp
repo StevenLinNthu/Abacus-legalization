@@ -33,7 +33,7 @@ struct cluster{
 	int e;
 	float x;
 	int w;
-	int q;
+	float q;
 };
 
 struct row{
@@ -43,8 +43,10 @@ struct row{
 	int siteorient, sitesymmetry;
 	int subroworigin;
 	int numsite;
+	int w=0;
 	vector<cluster> clusters;
 };
+
 
 
 struct CustomCompare
@@ -54,8 +56,10 @@ struct CustomCompare
     {
         if(lhs.x != rhs.x){
         	return lhs.x < rhs.x;
-		}else{
+		}else if(lhs.y != rhs.y){
 			return lhs.y < rhs.y;
+		}else{
+			return lhs.id < rhs.id;
 		}
 		
     }
@@ -67,8 +71,10 @@ string testcase_path = "../testcase/adaptec1/";
 int maxDisplacement;
 int numNode, numTerminal;
 int numRow;
+int height, buttom=1000000;
 unordered_map<int, node*> blocks, terminals;
 vector<row> rows, subrows;
+
 //
 
 void read_aux(FILE* input){
@@ -177,6 +183,8 @@ void read_scl(){
 		fscanf(input, " SubrowOrigin  : %d NumSites  : %d\n", &r.subroworigin, &r.numsite);
 		fscanf(input, " End\n");
 		//cout<<r.coordinate<<" "<<r.subroworigin<<endl;
+		if(buttom>r.coordinate) buttom = r.coordinate;
+		height = r.height;
 		rows.push_back(r);
 	}
 	
@@ -184,6 +192,7 @@ void read_scl(){
 
 void generate_subrows(){
 	int rowcnt = 0;
+	height = rows[0].height;
 	set<node, CustomCompare> obstacle;
 	for(auto i=terminals.begin(); i!=terminals.end(); i++){
 		obstacle.insert(*i->second);
@@ -205,7 +214,7 @@ void generate_subrows(){
 				tmpx = o->x + o->w;
 				rowcnt++;
 				subrows.push_back(r);
-				//cout<<"("<<r.subroworigin<<", "<<r.subroworigin+r.numsite<<") ";
+				//cout<<"("<<r.subroworigin<<", "<<r.coordinate<<", "<<r.numsite<<") ";
 			}else if(tmpx >= endx){
 				break;
 			}
@@ -217,11 +226,12 @@ void generate_subrows(){
 			r.numsite = rows[i].subroworigin + rows[i].numsite - tmpx;
 			rowcnt++;
 			subrows.push_back(r);
-			//cout<<"("<<r.subroworigin<<", "<<r.subroworigin+r.numsite<<") ";
+			//cout<<"("<<r.subroworigin<<", "<<r.coordinate<<", "<<r.numsite<<") ";
 		}
 		//cout<<endl;
 	}
-	cout<<"r: "<<rowcnt<<endl;
+	//cout<<"r: "<<rowcnt<<endl;
+	cout<<"buttom: "<<buttom<<" row height: "<<height<<endl;
 	return;
 }
 
@@ -247,55 +257,79 @@ void collapse(cluster c, int r){
 	c.x = (int)1.0*c.q/c.e;
 	if(c.x < subrows[r].subroworigin){
 		c.x = subrows[r].subroworigin;
-	}else if(c.x > subrows[r].subroworigin+subrows[r].numsite-c.w){
+	}
+	if(c.x+c.w > subrows[r].subroworigin+subrows[r].numsite){
 		c.x = subrows[r].subroworigin+subrows[r].numsite-c.w;
 	}
 	if(c.idx>=1){
 		cluster c_prev = subrows[r].clusters[c.idx-1];
 		if(c_prev.x+c_prev.w > c.x){
 			c_prev = add_cluster(c, c_prev);
+			subrows[r].clusters[c_prev.idx] = c_prev;
 			subrows[r].clusters.erase(subrows[r].clusters.begin() + c.idx);
+			for(int i=0; i<subrows[r].clusters.size();i++){
+				subrows[r].clusters[i].idx = i;
+			}
 		}
 		collapse(c_prev, r);
+		
 	}
 	return;
 }
 
-float place_row(node cell, int r, bool write = false){	
-	vector<cluster> backup = subrows[r].clusters;
+float place_row(node cell, int r, bool write){	
+	vector<cluster> backup;
+	if(!write) backup = subrows[r].clusters;
 	if(subrows[r].clusters.empty()){
 		cluster c;
 		c.idx = 0;
 		c.e = c.q = c.w = 0;
-		c.x = (int) cell.x;
+		c.x = (int) cell.x+0.5;
+		if(c.x < subrows[r].subroworigin){
+			c.x = subrows[r].subroworigin;
+		}else if(c.x+c.w > subrows[r].subroworigin+subrows[r].numsite){
+			c.x = subrows[r].subroworigin+subrows[r].numsite-c.w;
+		}
 		c = add_cell(c, cell);
-		//subrows[i].clusters.push_back(c);
+		subrows[r].clusters.push_back(c);
 	}else{
 		cluster c = subrows[r].clusters.back();
-		if(c.x+c.w <= cell.x){
-			cluster c2;
-			c2.e = c2.q = c2.w = 0;
-			c2.idx = c.idx++;
-			c2.x = (int) cell.x;
-			c2 = add_cell(c, cell);
-			//subrows[i].clusters.push_back(c2);
-		}else{
-			c = add_cell(c, cell);
-			collapse(c, r);
-		}
+		cluster c2;
+		c2.e = c2.q = c2.w = 0;
+		c2.idx = c.idx+1;
+		c2.x = (int) cell.x+0.5;
+		c2 = add_cell(c, cell);
+		subrows[r].clusters.push_back(c2);
+		collapse(c2, r);
+//		if(c.x+c.w <= cell.x){
+//			cluster c2;
+//			c2.e = c2.q = c2.w = 0;
+//			c2.idx = c.idx+1;
+//			c2.x = (int) cell.x+0.5;
+//			c2 = add_cell(c, cell);
+//			if(c2.x < subrows[r].subroworigin){
+//				c2.x = subrows[r].subroworigin;
+//			}else if(c2.x+c2.w > subrows[r].subroworigin+subrows[r].numsite){
+//				c2.x = subrows[r].subroworigin+subrows[r].numsite-c2.w;
+//			}
+//			subrows[r].clusters.push_back(c2);
+//			if(c2.x < c.x+c.w){
+//				collapse(c2, r);
+//			}
+//			
+//		}else{
+//			c = add_cell(c, cell);
+//			subrows[r].clusters[c.idx] = c;
+//			collapse(c, r);
+//		}
 	}
 	float cost=0;
-	for(int i=0; i<subrows[r].clusters.size(); i++){
-		int x = subrows[r].clusters[i].x;
-		for(auto j=subrows[r].clusters[i].cells.begin(); j!=subrows[r].clusters[i].cells.end(); j++){
-			if(write) blocks[*j].x = x;
-			if(*j = node.id && !write){
-				cost = (node.x - x)*(node.x - x) + (node.y - subrows[r].coordinate)*(node.y - subrows[r].coordinate);
-			}
-			x += blocks[*j].w;
-		}
-	}
-	if(!write) subrows[r].clusters = backup;
+	if(!write){
+		subrows[r].clusters.clear();
+		subrows[r].clusters = backup;	
+	}else{
+		subrows[r].w += cell.w;
+	} 
 	return cost;	
 }
 
@@ -305,18 +339,27 @@ void Abacus(){
 		cells.insert(*i->second);	
 	}
 	if(cells.size() != blocks.size()) cout<<"Size error: "<<cells.size()<<" "<<blocks.size()<<endl;
+	int k=0;
 	for(auto c=cells.begin(); c!=cells.end(); c++){
-		float cost = 1000000, tmp_cost=0;
+		cout<<"\r"<<k++<<"            ";
+		double cost = 10000000.0, tmp_cost=0;
 		int rbest = 0;
 		node cell = *c;
+		//int start = -1, end = -1;
 		for(int r=0; r<subrows.size(); r++){
-			 
-			if(abs(subrows[r].coordinate - cell.y) < 2*cell.h && ) tmp_cost = place_row(cell, r);
-			if(tmp_cost < cost){
-				cost = tmp_cost;
-				rbest = r;
-			}
+		//	cout<<"r: "<<r<<" "<<subrows[r].w<<endl;
+			if( subrows[r].w+cell.w<=subrows[r].numsite){//abs(subrows[r].coordinate - cell.y) < 1.5*cell.h &&
+				//tmp_cost = place_row(cell, r, false);	
+				tmp_cost = abs(cell.x - subrows[r].subroworigin-subrows[r].w)+ abs(cell.y - subrows[r].coordinate);
+			//	cout<<tmp_cost<<endl;
+				if(tmp_cost < cost){
+				//	cout<<"in"<<endl;
+					cost = tmp_cost;
+					rbest = r;
+				}
+			} 
 		}
+		//cout<<"rbest: "<<rbest<<endl;
 		place_row(cell, rbest, true);
 	}
 	return;
@@ -332,8 +375,36 @@ int main(void){
 	read_pl();
 	read_scl();
 	
+	
 	generate_subrows();
 	Abacus();
+	
+	for(int i=0;i<subrows.size();i++){
+		
+		for(int j=0; j<subrows[i].clusters.size(); j++){
+			int x=0;
+			x = subrows[i].clusters[j].x;
+			for(auto it=subrows[i].clusters[j].cells.begin(); it!=subrows[i].clusters[j].cells.end();it++){
+				blocks[*it]->x = x;
+				blocks[*it]->y = subrows[i].coordinate;
+				x += blocks[*it]->w;
+			}
+		}
+	}
+	
+	ofstream output;
+	output.open("./out.txt");
+	output<<"numBlock: "<<" "<<blocks.size()+terminals.size()<<endl;
+	for(auto i=blocks.begin(); i!=blocks.end();i++){
+		output<<i->second->name<<" "<<i->second->x<<" "<<i->second->y<<" "<<i->second->w<<" "<<i->second->h<<"\n";
+	}
+//	output<<"numBlock: "<<" "<<subrows.size()+terminals.size()<<endl;
+//	for(auto i=0; i<subrows.size();i++){
+//		output<<i<<" "<<subrows[i].subroworigin<<" "<<subrows[i].coordinate<<" "<<subrows[i].numsite<<" "<<subrows[i].height<<"\n";
+//	}
+	for(auto i=terminals.begin(); i!=terminals.end();i++){
+		output<<i->second->name<<" "<<i->second->x<<" "<<i->second->y<<" "<<i->second->w<<" "<<i->second->h<<"\n";
+	}
 	
 	return 0;	
 }
