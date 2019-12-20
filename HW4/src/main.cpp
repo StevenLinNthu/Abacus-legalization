@@ -45,6 +45,15 @@ struct row{
 	int numsite;
 	int w=0;
 	vector<cluster> clusters;
+	bool operator < (const row& r) const{
+		if(coordinate != r.coordinate){
+			return (coordinate < r.coordinate);
+		}else if(subroworigin!= r.subroworigin){
+			return (subroworigin < r.subroworigin);
+		}
+
+	}
+	
 };
 
 
@@ -74,6 +83,7 @@ int numRow;
 int height, buttom=1000000;
 unordered_map<int, node*> blocks, terminals;
 vector<row> rows, subrows;
+unordered_map<int, int> rowidx;
 
 //
 
@@ -95,7 +105,7 @@ void read_node(){
 	FILE* input = fopen(p, "r");
 	string str;
 	char c[100];
-	
+
 	fscanf(input, "%[^\n]%*c", c); // skip first row
 	while(true){ //skip comment
 		fscanf(input, "%s", c);
@@ -136,7 +146,6 @@ void read_pl(){
 	float x, y;
 	int id;
 	for(int i=0; i<numNode - numTerminal; i++){
-		node* n = new node();
 		fscanf(input, " %s %f %f : N\n", c, &x, &y);
 		str = c;
 		id = stoi(str.erase(0,1));
@@ -144,7 +153,6 @@ void read_pl(){
 		blocks[id]->y = y;
 	}
 	for(int i=numNode - numTerminal; i<numNode; i++){
-		node* n = new node();
 		fscanf(input, " %s %f %f  : N /FIXED\n", c, &x, &y);
 		str = c;
 		id = stoi(str.erase(0,1));
@@ -187,6 +195,7 @@ void read_scl(){
 		height = r.height;
 		rows.push_back(r);
 	}
+	sort(rows.begin(), rows.end());
 	
 }
 
@@ -199,9 +208,12 @@ void generate_subrows(){
 		
 	}
 	//cout<<"o: "<<obstacle.size()<<endl;
-	for(int i=0; i<rows.size(); i++){
-		int tmpx = rows[i].subroworigin, endx = rows[i].subroworigin + rows[i].numsite;
+	for(unsigned int i=0; i<rows.size(); i++){
+		int tmpx = rows[i].subroworigin, endx = rows[i].subroworigin + rows[i].numsite*rows[i].sitewidth;
 		int tmpy = rows[i].coordinate;
+		if(rowidx.find((tmpy-height)/height) == rowidx.end()){
+			rowidx[((tmpy-buttom)/height)] = rowcnt;
+		}
 		//cout<<"row "<<i<<":\n";
 		for(auto o=obstacle.begin(); o!=obstacle.end();o++){
 			if(o->x == tmpx && tmpy >= o->y && tmpy < o->y+o->h){
@@ -219,11 +231,14 @@ void generate_subrows(){
 				break;
 			}
 		}
-		if(tmpx < rows[i].subroworigin + rows[i].numsite){
+		if(tmpx < rows[i].subroworigin + rows[i].numsite*rows[i].sitewidth){
 			row r = rows[i];
 			r.subroworigin = tmpx;
 			r.coordinate = tmpy;
-			r.numsite = rows[i].subroworigin + rows[i].numsite - tmpx;
+			r.numsite = (rows[i].subroworigin + rows[i].numsite*rows[i].sitewidth - tmpx)/rows[i].sitewidth;
+			if(rowidx.find((tmpy-height)/height) == rowidx.end()){
+				rowidx[((tmpy-buttom)/height)] = rowcnt;
+			}
 			rowcnt++;
 			subrows.push_back(r);
 			//cout<<"("<<r.subroworigin<<", "<<r.coordinate<<", "<<r.numsite<<") ";
@@ -238,15 +253,16 @@ void generate_subrows(){
 cluster add_cell(cluster c, node n){
 	c.cells.push_back(n.id);
 	c.e++;
-	c.q += n.x - c.w;
+	c.q += 1*(n.x - c.w);
 	c.w += n.w;
 	return c;
 }
 
 cluster add_cluster(cluster c, cluster c_prev){
-	for(int i=0; i<c.cells.size();i++){
+	for(unsigned int i=0; i<c.cells.size();i++){
 		c_prev.cells.push_back(c.cells[i]);
 	}
+	c.cells.clear();
 	c_prev.e += c.e;
 	c_prev.q += c.q - c.e*c_prev.w;
 	c_prev.w += c.w;
@@ -254,20 +270,21 @@ cluster add_cluster(cluster c, cluster c_prev){
 }
 
 void collapse(cluster c, int r){
-	c.x = (int)1.0*c.q/c.e;
+	c.x = (int)(1.0*c.q/c.e/subrows[r].sitewidth)*subrows[r].sitewidth;
 	if(c.x < subrows[r].subroworigin){
 		c.x = subrows[r].subroworigin;
 	}
-	if(c.x+c.w > subrows[r].subroworigin+subrows[r].numsite){
-		c.x = subrows[r].subroworigin+subrows[r].numsite-c.w;
+	if(c.x+c.w > subrows[r].subroworigin+subrows[r].numsite*subrows[r].sitewidth){
+		c.x = subrows[r].subroworigin+subrows[r].numsite*subrows[r].sitewidth-c.w;
 	}
+	subrows[r].clusters[c.idx] = c;
 	if(c.idx>=1){
 		cluster c_prev = subrows[r].clusters[c.idx-1];
 		if(c_prev.x+c_prev.w > c.x){
 			c_prev = add_cluster(c, c_prev);
 			subrows[r].clusters[c_prev.idx] = c_prev;
 			subrows[r].clusters.erase(subrows[r].clusters.begin() + c.idx);
-			for(int i=0; i<subrows[r].clusters.size();i++){
+			for(unsigned int i=0; i<subrows[r].clusters.size();i++){
 				subrows[r].clusters[i].idx = i;
 			}
 		}
@@ -284,44 +301,25 @@ float place_row(node cell, int r, bool write){
 		cluster c;
 		c.idx = 0;
 		c.e = c.q = c.w = 0;
-		c.x = (int) cell.x+0.5;
+		c.x = (int) (cell.x+0.5)/subrows[r].sitewidth*subrows[r].sitewidth;
 		if(c.x < subrows[r].subroworigin){
 			c.x = subrows[r].subroworigin;
-		}else if(c.x+c.w > subrows[r].subroworigin+subrows[r].numsite){
-			c.x = subrows[r].subroworigin+subrows[r].numsite-c.w;
+		}
+		if(c.x+c.w > subrows[r].subroworigin+subrows[r].numsite*subrows[r].sitewidth){
+			c.x = subrows[r].subroworigin+subrows[r].numsite*subrows[r].sitewidth-c.w;
 		}
 		c = add_cell(c, cell);
 		subrows[r].clusters.push_back(c);
+		collapse(c, r);
 	}else{
 		cluster c = subrows[r].clusters.back();
 		cluster c2;
 		c2.e = c2.q = c2.w = 0;
 		c2.idx = c.idx+1;
-		c2.x = (int) cell.x+0.5;
-		c2 = add_cell(c, cell);
+		c2.x = (int) (cell.x+0.5)/subrows[r].sitewidth*subrows[r].sitewidth;
+		c2 = add_cell(c2, cell);
 		subrows[r].clusters.push_back(c2);
 		collapse(c2, r);
-//		if(c.x+c.w <= cell.x){
-//			cluster c2;
-//			c2.e = c2.q = c2.w = 0;
-//			c2.idx = c.idx+1;
-//			c2.x = (int) cell.x+0.5;
-//			c2 = add_cell(c, cell);
-//			if(c2.x < subrows[r].subroworigin){
-//				c2.x = subrows[r].subroworigin;
-//			}else if(c2.x+c2.w > subrows[r].subroworigin+subrows[r].numsite){
-//				c2.x = subrows[r].subroworigin+subrows[r].numsite-c2.w;
-//			}
-//			subrows[r].clusters.push_back(c2);
-//			if(c2.x < c.x+c.w){
-//				collapse(c2, r);
-//			}
-//			
-//		}else{
-//			c = add_cell(c, cell);
-//			subrows[r].clusters[c.idx] = c;
-//			collapse(c, r);
-//		}
 	}
 	float cost=0;
 	if(!write){
@@ -341,35 +339,107 @@ void Abacus(){
 	if(cells.size() != blocks.size()) cout<<"Size error: "<<cells.size()<<" "<<blocks.size()<<endl;
 	int k=0;
 	for(auto c=cells.begin(); c!=cells.end(); c++){
-		cout<<"\r"<<k++<<"            ";
-		double cost = 10000000.0, tmp_cost=0;
+		cout<<"\r"<<k++;
+		double cost = 10000000.0, tmp_cost=-1;
 		int rbest = 0;
 		node cell = *c;
-		//int start = -1, end = -1;
-		for(int r=0; r<subrows.size(); r++){
-		//	cout<<"r: "<<r<<" "<<subrows[r].w<<endl;
-			if( subrows[r].w+cell.w<=subrows[r].numsite){//abs(subrows[r].coordinate - cell.y) < 1.5*cell.h &&
-				//tmp_cost = place_row(cell, r, false);	
-				tmp_cost = abs(cell.x - subrows[r].subroworigin-subrows[r].w)+ abs(cell.y - subrows[r].coordinate);
-			//	cout<<tmp_cost<<endl;
+		for(unsigned int r=0; r<subrows.size(); r++){
+			if(subrows[r].w+cell.w <= subrows[r].numsite*subrows[r].sitewidth){//abs(subrows[r].coordinate - cell.y) < 1.5*cell.h &&
+				int backx = subrows[r].clusters.empty()? subrows[r].subroworigin:subrows[r].clusters.back().x;
+				int backw = subrows[r].clusters.empty()? 0:subrows[r].clusters.back().w;
+				int tmpx = backx + backw;
+				if(cell.x > tmpx && cell.x+cell.w < subrows[r].subroworigin+subrows[r].numsite*subrows[r].sitewidth){
+					tmp_cost = abs(cell.y - subrows[r].coordinate);
+				}else{
+					tmp_cost = sqrt((cell.x - tmpx)*(cell.x - tmpx) + (cell.y - subrows[r].coordinate)*(cell.y - subrows[r].coordinate));
+				}
 				if(tmp_cost < cost){
-				//	cout<<"in"<<endl;
 					cost = tmp_cost;
 					rbest = r;
 				}
 			} 
 		}
-		//cout<<"rbest: "<<rbest<<endl;
+
+//		int h = (cell.y-buttom)/height;
+//		int upper = h+1>=rowidx.size()? rows.size():rowidx[h+1];
+//		int lower = h-1<0? 0: rowidx[h-1];
+//		for(int r=rowidx[h]; r<upper; r++){
+//			if( subrows[r].w+cell.w<=subrows[r].numsite){
+//				int backx = subrows[r].clusters.empty()? subrows[r].subroworigin:subrows[r].clusters.back().x;
+//				int backw = subrows[r].clusters.empty()? 0:subrows[r].clusters.back().w;
+//				int tmpx = backx + backw;
+//				tmp_cost = sqrt((cell.x - tmpx)*(cell.x - tmpx) + (cell.y - subrows[r].coordinate)*(cell.y - subrows[r].coordinate));
+//				if(tmp_cost < cost){
+//					cost = tmp_cost;
+//					rbest = r;
+//				}
+//			} 
+//		}
+//		if(tmp_cost == -1){
+//			h = upper;
+//			while(tmp_cost < 0 || h == rowidx.size()){
+//				upper = h+1>=rowidx.size()? rows.size():rowidx[h+1];
+//				for(int r=rowidx[h]; r<upper; r++){
+//					int backx = subrows[r].clusters.empty()? subrows[r].subroworigin:subrows[r].clusters.back().x;
+//					int backw = subrows[r].clusters.empty()? 0:subrows[r].clusters.back().w;
+//					int tmpx = backx + backw;
+//					if( subrows[r].w+cell.w<=subrows[r].numsite){
+//						int tmpx = subrows[r].clusters.back().x + subrows[r].clusters.back().w;
+//						tmp_cost = sqrt((cell.x - tmpx)*(cell.x - tmpx) + (cell.y - subrows[r].coordinate)*(cell.y - subrows[r].coordinate));
+//						if(tmp_cost < cost){
+//							cost = tmp_cost;
+//							rbest = r;
+//						}
+//					} 
+//				}
+//				h++;
+//			}
+//			h = lower;
+//			while(tmp_cost < 0 || h >= 0){
+//				upper = h+1>=rowidx.size()? rows.size():rowidx[h+1];
+//				for(int r=rowidx[h]; r<upper; r++){
+//					if( subrows[r].w+cell.w<=subrows[r].numsite){
+//						int backx = subrows[r].clusters.empty()? subrows[r].subroworigin:subrows[r].clusters.back().x;
+//						int backw = subrows[r].clusters.empty()? 0:subrows[r].clusters.back().w;
+//						int tmpx = backx + backw;
+//						tmp_cost = sqrt((cell.x - tmpx)*(cell.x - tmpx) + (cell.y - subrows[r].coordinate)*(cell.y - subrows[r].coordinate));
+//						if(tmp_cost < cost){
+//							cost = tmp_cost;
+//							rbest = r;
+//						}
+//					} 
+//				}
+//				h--;
+//			}
+//		}
 		place_row(cell, rbest, true);
 	}
 	return;
+	
 }
 
 
 
 
-int main(void){
-	FILE* aux = fopen("../testcase/adaptec1/adaptec1.aux", "r");
+int main(int argc, char *argv[]){
+	
+	FILE* aux = fopen(argv[1], "r");
+	int idx1=0, idx2=0;
+	
+	string str = argv[1];
+	for(int i=str.size(); i>0; i--){
+		if(str[i] == '.'){
+			idx2 = i;
+		}
+		if(str[i] == '/'){
+			idx1 = i;
+			break;
+		} 
+	}
+	testcase_path = str.substr(0, idx1+1);
+	string name = str.substr(idx1+1, idx2-idx1-1);
+	name = name + ".result";
+
 	read_aux(aux);
 	read_node();
 	read_pl();
@@ -379,32 +449,44 @@ int main(void){
 	generate_subrows();
 	Abacus();
 	
-	for(int i=0;i<subrows.size();i++){
+	for(unsigned int i=0;i<subrows.size();i++){
 		
-		for(int j=0; j<subrows[i].clusters.size(); j++){
+		for(unsigned int j=0; j<subrows[i].clusters.size(); j++){
 			int x=0;
 			x = subrows[i].clusters[j].x;
 			for(auto it=subrows[i].clusters[j].cells.begin(); it!=subrows[i].clusters[j].cells.end();it++){
+				if(blocks.find(*it)==blocks.end()) cout<<"ERROR: "<<*it;
 				blocks[*it]->x = x;
 				blocks[*it]->y = subrows[i].coordinate;
 				x += blocks[*it]->w;
+				if(x > subrows[i].subroworigin + subrows[i].numsite*subrows[i].sitewidth) cout<<"Error:"<<subrows[i].subroworigin+subrows[i].numsite;
 			}
 		}
 	}
 	
 	ofstream output;
-	output.open("./out.txt");
-	output<<"numBlock: "<<" "<<blocks.size()+terminals.size()<<endl;
+	output.open(name);
+	//output<<"numBlock: "<<" "<<blocks.size()+terminals.size()<<endl;
+	output<<"UCLA pl 1.0"<<endl<<endl;
+//	for(auto i=blocks.begin(); i!=blocks.end();i++){
+//		output<<i->second->name<<" "<<i->second->x<<" "<<i->second->y<<" "<<i->second->w<<" "<<i->second->h<<"\n";
+//	}
+
 	for(auto i=blocks.begin(); i!=blocks.end();i++){
-		output<<i->second->name<<" "<<i->second->x<<" "<<i->second->y<<" "<<i->second->w<<" "<<i->second->h<<"\n";
+		output<<i->second->name<<" "<<i->second->x<<" "<<i->second->y<<" : N\n";
 	}
+	for(auto i=terminals.begin(); i!=terminals.end();i++){
+		output<<i->second->name<<" "<<i->second->x<<" "<<i->second->y<<" : N /FIXED\n";
+	}
+	
 //	output<<"numBlock: "<<" "<<subrows.size()+terminals.size()<<endl;
 //	for(auto i=0; i<subrows.size();i++){
 //		output<<i<<" "<<subrows[i].subroworigin<<" "<<subrows[i].coordinate<<" "<<subrows[i].numsite<<" "<<subrows[i].height<<"\n";
 //	}
-	for(auto i=terminals.begin(); i!=terminals.end();i++){
-		output<<i->second->name<<" "<<i->second->x<<" "<<i->second->y<<" "<<i->second->w<<" "<<i->second->h<<"\n";
-	}
+//	for(auto i=terminals.begin(); i!=terminals.end();i++){
+//		output<<i->second->name<<" "<<i->second->x<<" "<<i->second->y<<" "<<i->second->w<<" "<<i->second->h<<"\n";
+//	}
+
 	
 	return 0;	
 }
