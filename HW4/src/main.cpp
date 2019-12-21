@@ -323,6 +323,8 @@ float place_row(node cell, int r, bool write){
 	}
 	float cost=0;
 	if(!write){
+		int x =subrows[r].clusters.back().x, y = subrows[r].coordinate; 
+		cost = sqrt((cell.x - x)*(cell.x - x) + (cell.y - y)*(cell.y - y));
 		subrows[r].clusters.clear();
 		subrows[r].clusters = backup;	
 	}else{
@@ -343,16 +345,21 @@ void Abacus(){
 		double cost = 10000000.0, tmp_cost=-1;
 		int rbest = 0;
 		node cell = *c;
-		for(unsigned int r=0; r<subrows.size(); r++){
+		// int h = (cell.y-buttom)/height;
+		// int start = (h-10)>0? rowidx[h-10]:0;
+		// int end = (h+10)<rowidx.size()? rowidx[rowidx.size()-1]:rowidx[h+10];
+		// for(int r=start; r<end; r++){
+		for(int r=0; r<subrows.size(); r++){
 			if(subrows[r].w+cell.w <= subrows[r].numsite*subrows[r].sitewidth){//abs(subrows[r].coordinate - cell.y) < 1.5*cell.h &&
 				int backx = subrows[r].clusters.empty()? subrows[r].subroworigin:subrows[r].clusters.back().x;
 				int backw = subrows[r].clusters.empty()? 0:subrows[r].clusters.back().w;
 				int tmpx = backx + backw;
-				if(cell.x > tmpx && cell.x+cell.w < subrows[r].subroworigin+subrows[r].numsite*subrows[r].sitewidth){
+				if(cell.x > tmpx && cell.x+cell.w <= subrows[r].subroworigin+subrows[r].numsite*subrows[r].sitewidth){
 					tmp_cost = abs(cell.y - subrows[r].coordinate);
 				}else{
 					tmp_cost = sqrt((cell.x - tmpx)*(cell.x - tmpx) + (cell.y - subrows[r].coordinate)*(cell.y - subrows[r].coordinate));
 				}
+				//tmp_cost = place_row(cell, r, false);
 				if(tmp_cost < cost){
 					cost = tmp_cost;
 					rbest = r;
@@ -360,58 +367,6 @@ void Abacus(){
 			} 
 		}
 
-//		int h = (cell.y-buttom)/height;
-//		int upper = h+1>=rowidx.size()? rows.size():rowidx[h+1];
-//		int lower = h-1<0? 0: rowidx[h-1];
-//		for(int r=rowidx[h]; r<upper; r++){
-//			if( subrows[r].w+cell.w<=subrows[r].numsite){
-//				int backx = subrows[r].clusters.empty()? subrows[r].subroworigin:subrows[r].clusters.back().x;
-//				int backw = subrows[r].clusters.empty()? 0:subrows[r].clusters.back().w;
-//				int tmpx = backx + backw;
-//				tmp_cost = sqrt((cell.x - tmpx)*(cell.x - tmpx) + (cell.y - subrows[r].coordinate)*(cell.y - subrows[r].coordinate));
-//				if(tmp_cost < cost){
-//					cost = tmp_cost;
-//					rbest = r;
-//				}
-//			} 
-//		}
-//		if(tmp_cost == -1){
-//			h = upper;
-//			while(tmp_cost < 0 || h == rowidx.size()){
-//				upper = h+1>=rowidx.size()? rows.size():rowidx[h+1];
-//				for(int r=rowidx[h]; r<upper; r++){
-//					int backx = subrows[r].clusters.empty()? subrows[r].subroworigin:subrows[r].clusters.back().x;
-//					int backw = subrows[r].clusters.empty()? 0:subrows[r].clusters.back().w;
-//					int tmpx = backx + backw;
-//					if( subrows[r].w+cell.w<=subrows[r].numsite){
-//						int tmpx = subrows[r].clusters.back().x + subrows[r].clusters.back().w;
-//						tmp_cost = sqrt((cell.x - tmpx)*(cell.x - tmpx) + (cell.y - subrows[r].coordinate)*(cell.y - subrows[r].coordinate));
-//						if(tmp_cost < cost){
-//							cost = tmp_cost;
-//							rbest = r;
-//						}
-//					} 
-//				}
-//				h++;
-//			}
-//			h = lower;
-//			while(tmp_cost < 0 || h >= 0){
-//				upper = h+1>=rowidx.size()? rows.size():rowidx[h+1];
-//				for(int r=rowidx[h]; r<upper; r++){
-//					if( subrows[r].w+cell.w<=subrows[r].numsite){
-//						int backx = subrows[r].clusters.empty()? subrows[r].subroworigin:subrows[r].clusters.back().x;
-//						int backw = subrows[r].clusters.empty()? 0:subrows[r].clusters.back().w;
-//						int tmpx = backx + backw;
-//						tmp_cost = sqrt((cell.x - tmpx)*(cell.x - tmpx) + (cell.y - subrows[r].coordinate)*(cell.y - subrows[r].coordinate));
-//						if(tmp_cost < cost){
-//							cost = tmp_cost;
-//							rbest = r;
-//						}
-//					} 
-//				}
-//				h--;
-//			}
-//		}
 		place_row(cell, rbest, true);
 	}
 	return;
@@ -438,7 +393,7 @@ int main(int argc, char *argv[]){
 	}
 	testcase_path = str.substr(0, idx1+1);
 	string name = str.substr(idx1+1, idx2-idx1-1);
-	name = name + ".result";
+	name = "../output/" +name + ".result";
 
 	read_aux(aux);
 	read_node();
